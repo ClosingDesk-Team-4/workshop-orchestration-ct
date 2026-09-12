@@ -1,5 +1,31 @@
 """
 Workflow state machine for closing cases.
+
+WHAT GATES A CLOSING -- AND WHAT DOES NOT:
+
+There is no document-hash or content-integrity verification anywhere in this
+service. Nothing checks that the package a partner claims to have produced is the
+package the borrower actually signed. Only two gates stand between `draft` and
+`closed`:
+
+1. `can_transition()` below -- ordering only. It compares positions in
+   `WorkflowState` and never inspects document content.
+2. `FundingChecklist.all_cleared` (`app/services/funding_service.py`) -- operator-
+   asserted booleans. `patch_checklist_items()` stores caller-supplied items
+   verbatim, so "cleared" means "someone said so", not "verified".
+
+Both are reachable without authentication: `/webhooks/partner` performs no
+signature check and passes `target_state` straight into `apply_transition()`
+(see `app/services/partner_webhook_service.py`). The `SIGNING_SCHEDULED` branch
+below widens this further, letting any pre-signing state leapfrog to
+`signing_scheduled`. Per README, that unsigned/replayable ingest path is a
+deliberate training weakness, not an oversight to patch in isolation.
+
+DO NOT REPEAT: do not build anything that treats arrival at `funding_ready` or
+`closed` as evidence that document integrity was verified -- it is not. If you
+add such verification, gate `apply_transition()` itself and pair it with HMAC
+signature plus replay-cache enforcement at ingest; a hash check bolted onto the
+unsigned webhook path is bypassed by re-posting the envelope.
 """
 
 from __future__ import annotations
